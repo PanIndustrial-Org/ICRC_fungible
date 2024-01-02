@@ -221,7 +221,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
 
   private func updated_certification(cert: Blob, lastIndex: Nat) : Bool{
 
-    ("updating the certification " # debug_show(CertifiedData.getCertificate(), ct.treeHash()));
+    ct.setCertifiedData();
     return true;
   };
 
