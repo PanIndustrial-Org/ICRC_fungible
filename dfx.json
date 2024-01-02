@@ -1,0 +1,37 @@
+{
+    "version": 1,
+    "canisters": {
+        
+        "token": {
+          "type": "motoko",
+          "main": "src/Token.mo",
+          "args": "-v --compacting-gc"
+        },
+        "prodtoken": {
+          "type": "motoko",
+          "gzip": true,
+          "main": "src/Token.mo",
+          "args": "--compacting-gc --release"
+        },
+        "allowlist": {
+          "type": "motoko",
+          "main": "src/examples/Allowlist.mo",
+          "args": "-v --compacting-gc"
+        },
+        "lotto": {
+          "type": "motoko",
+          "main": "src/examples/Lotto.mo",
+          "args": "-v --compacting-gc"
+        }
+    },
+    "defaults": {
+        "build": {
+            "packtool": "mops sources",
+            "args": ""
+        },
+        "replica": {
+          "subnet_type": "system"
+      }
+    }
+    
+}
