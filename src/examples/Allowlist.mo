@@ -75,7 +75,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       settle_to_approvals = ?9990000;
     };
 
-    let default_icrc3_args : ICRC3.InitArgs = {
+    let default_icrc3_args : ICRC3.InitArgs = ?{
       maxActiveRecords = 3000;
       settleToRecords = 2000;
       maxRecordsInArchiveInstance = 100000000;
@@ -130,7 +130,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
 
     stable let icrc1_migration_state = ICRC1.init(ICRC1.initialState(), #v0_1_0(#id),?icrc1_args, _owner);
     stable let icrc2_migration_state = ICRC2.init(ICRC2.initialState(), #v0_1_0(#id),?icrc2_args, _owner);
-    stable let icrc3_migration_state = ICRC3.init(ICRC3.initialState(), #v0_1_0(#id),?icrc3_args, _owner);
+    stable let icrc3_migration_state = ICRC3.init(ICRC3.initialState(), #v0_1_0(#id), icrc3_args, _owner);
     stable let cert_store : CertTree.Store = CertTree.newStore();
     let ct = CertTree.Ops(cert_store);
 
@@ -149,7 +149,6 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       get_time = null;
       get_fee = null;
       add_ledger_transaction = ?icrc3().add_record;
-      can_transfer = ?#Sync(can_transfer); 
     };
   };
 
@@ -180,8 +179,6 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     {
       icrc1 = icrc1();
       get_fee = null;
-      can_approve = ?#Sync(can_approve); 
-      can_transfer_from = ?#Sync(can_transfer_from); 
     };
   };
 
@@ -276,7 +273,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
   };
 
   public shared ({ caller }) func icrc1_transfer(args : ICRC1.TransferArgs) : async ICRC1.TransferResult {
-      switch(await* icrc1().transfer_tokens(caller, args, false)){
+      switch(await* icrc1().transfer_tokens(caller, args, false,  ?#Sync(can_transfer))){
         case(#trappable(val)) val;
         case(#awaited(val)) val;
         case(#err(#trappable(err))) D.trap(err);
@@ -309,7 +306,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     };
 
   public shared ({ caller }) func icrc2_approve(args : ICRC2.ApproveArgs) : async ICRC2.ApproveResponse {
-      switch(await*  icrc2().approve_transfers(caller, args, false)){
+      switch(await*  icrc2().approve_transfers(caller, args, false, ?#Sync(can_approve))){
         case(#trappable(val)) val;
         case(#awaited(val)) val;
         case(#err(#trappable(err))) D.trap(err);
@@ -318,7 +315,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
   };
 
   public shared ({ caller }) func icrc2_transfer_from(args : ICRC2.TransferFromArgs) : async ICRC2.TransferFromResponse {
-      switch(await* icrc2().transfer_tokens_from(caller, args)){
+      switch(await* icrc2().transfer_tokens_from(caller, args, ?#Sync(can_transfer_from))){
         case(#trappable(val)) val;
         case(#awaited(val)) val;
         case(#err(#trappable(err))) D.trap(err);
