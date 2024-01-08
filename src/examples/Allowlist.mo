@@ -13,8 +13,8 @@
 /// New valid principals can be added by calling the admin_update_allowlist(Principal, Bool) function.  The
 /// token owner is added durning initialization.
 ///
-/// The only changes to the base code are the configuratoin of the can_transfer in the ICRC1 environment,
-/// and can_approve and can_transfer_from in the ICRC2 environment. Those functions and supporting infrastructure
+/// The only changes to the base code are the configuration of the can_transfer that is passed to transfer,
+/// and can_approve and can_transfer_from passed to the respective functions. Those functions and supporting infrastructure
 /// can be found at the end of the actor file. 
 ///
 /////////////////////
@@ -34,11 +34,14 @@ import CertTree "mo:cert/CertTree";
 import ICRC1 "mo:icrc1-mo/ICRC1";
 import ICRC2 "mo:icrc2-mo/ICRC2";
 import ICRC3 "mo:icrc3-mo/";
+import ICRC4 "mo:icrc4-mo/ICRC4";
 
 shared ({ caller = _owner }) actor class Token  (args: ?{
     icrc1 : ?ICRC1.InitArgs;
     icrc2 : ?ICRC2.InitArgs;
     icrc3 : ?ICRC3.InitArgs;
+
+    icrc4 : ?ICRC4.InitArgs;
   }
 ) = this{
 
@@ -86,6 +89,12 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       archiveControllers = null; //??[put cycle ops prinicpal here];
     };
 
+    let default_icrc4_args : ICRC4.InitArgs = {
+      max_balances = ?3000;
+      max_transfers = ?3000;
+      fee = ?#ICRC1;
+    };
+
     let icrc1_args : ICRC1.InitArgs = switch(args){
       case(null) default_icrc1_args;
       case(?args){
@@ -128,9 +137,20 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       };
     };
 
+    let icrc4_args : ICRC4.InitArgs = switch(args){
+      case(null) default_icrc4_args;
+      case(?args){
+        switch(args.icrc4){
+          case(null) default_icrc4_args;
+          case(?val) val;
+        };
+      };
+    };
+
     stable let icrc1_migration_state = ICRC1.init(ICRC1.initialState(), #v0_1_0(#id),?icrc1_args, _owner);
     stable let icrc2_migration_state = ICRC2.init(ICRC2.initialState(), #v0_1_0(#id),?icrc2_args, _owner);
     stable let icrc3_migration_state = ICRC3.init(ICRC3.initialState(), #v0_1_0(#id), icrc3_args, _owner);
+    stable let icrc4_migration_state = ICRC4.init(ICRC4.initialState(), #v0_1_0(#id),?icrc4_args, _owner);
     stable let cert_store : CertTree.Store = CertTree.newStore();
     let ct = CertTree.Ops(cert_store);
 
@@ -187,6 +207,32 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       case(null){
         let initclass : ICRC2.ICRC2 = ICRC2.ICRC2(?icrc2_migration_state, Principal.fromActor(this), get_icrc2_environment());
         _icrc2 := ?initclass;
+        initclass;
+      };
+      case(?val) val;
+    };
+  };
+
+  let #v0_1_0(#data(icrc4_state_current)) = icrc4_migration_state;
+
+  private var _icrc4 : ?ICRC4.ICRC4 = null;
+
+  private func get_icrc4_state() : ICRC4.CurrentState {
+    return icrc4_state_current;
+  };
+
+  private func get_icrc4_environment() : ICRC4.Environment {
+    {
+      icrc1 = icrc1();
+      get_fee = null;
+    };
+  };
+
+  func icrc4() : ICRC4.ICRC4 {
+    switch(_icrc4){
+      case(null){
+        let initclass : ICRC4.ICRC4 = ICRC4.ICRC4(?icrc4_migration_state, Principal.fromActor(this), get_icrc4_environment());
+        _icrc4 := ?initclass;
         initclass;
       };
       case(?val) val;
@@ -323,6 +369,19 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       };
   };
 
+  public shared ({ caller }) func icrc4_transfer_batch(args: ICRC4.TransferBatchArgs) : async ICRC4.TransferBatchResult {
+      switch(await* icrc4().transfer_batch_tokens(caller, args, ?#Sync(can_transfer), ?#Sync(can_transfer_batch))){
+        case(#trappable(val)) val;
+        case(#awaited(val)) val;
+        case(#err(#trappable(err))) D.trap(err);
+        case(#err(#awaited(err))) D.trap(err);
+      };
+  };
+
+  public shared query func icrc4_balance_of_batch(request : ICRC4.BalanceQueryArgs) : async ICRC4.BalanceQueryResult {
+      icrc4().balance_of_batch(request);
+  };
+
   public query func icrc3_get_blocks(args: ICRC3.GetBlocksArgs) : async ICRC3.GetBlocksResult{
     return icrc3().get_blocks(args);
   };
@@ -353,6 +412,11 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
   public shared ({ caller }) func admin_update_icrc2(requests : [ICRC2.UpdateLedgerInfoRequest]) : async [Bool] {
     if(caller != owner){ D.trap("Unauthorized")};
     return icrc2().update_ledger_info(requests);
+  };
+
+  public shared ({ caller }) func admin_update_icrc4(requests : [ICRC4.UpdateLedgerInfoRequest]) : async [Bool] {
+    if(caller != owner){ D.trap("Unauthorized")};
+    return icrc4().update_ledger_info(requests);
   };
 
   private stable var _init = false;
@@ -425,6 +489,13 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     if(Set.has<Principal>(allowlist, Set.phash, notification.from.owner)){
       return #ok(trx,update_fee(trxtop,0),{notification with 
         calculated_fee = 0;});
+    };
+    return #err("Not allowed");
+  };
+
+  private func can_transfer_batch(notification: ICRC4.TransferBatchNotification) : Result.Result<(notification: ICRC4.TransferBatchNotification), Text>{
+    if(Set.has<Principal>(allowlist, Set.phash, notification.from)){
+      return #ok(notification);
     };
     return #err("Not allowed");
   };
