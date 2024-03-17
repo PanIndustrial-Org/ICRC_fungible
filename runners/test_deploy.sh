@@ -64,7 +64,13 @@ icrc3 = opt record {
   archiveIndexType = variant {Stable = null};
   maxRecordsToArchive = 8000;
   archiveCycles = 20_000_000_000_000;
+  supportedBlocks = vec {};
   archiveControllers = null;
+};
+icrc4 = opt record {
+  max_balances = opt 200;
+  max_transfers = opt 200;
+  fee = opt variant { ICRC1 = null};
 };})" --mode reinstall
 
 ICRC_CANISTER=$(dfx canister id token)

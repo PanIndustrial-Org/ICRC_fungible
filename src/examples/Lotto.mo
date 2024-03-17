@@ -9,21 +9,17 @@
 ///
 /////////////////////
 
-import Array "mo:base/Array";
+import Buffer "mo:base/Buffer";
 import D "mo:base/Debug";
 import ExperimentalCycles "mo:base/ExperimentalCycles";
 import Int "mo:base/Int";
-import Iter "mo:base/Iter";
-import Option "mo:base/Option";
 import Principal "mo:base/Principal";
-import Result "mo:base/Result";
 import Nat64 "mo:base/Nat64";
 import Text "mo:base/Text";
 import Time "mo:base/Time";
 import Timer "mo:base/Timer";
 import Random "mo:base/Random";
 
-import CertifiedData "mo:base/CertifiedData";
 import CertTree "mo:cert/CertTree";
 
 import ICRC1 "mo:icrc1-mo/ICRC1";
@@ -34,7 +30,7 @@ import ICRC4 "mo:icrc4-mo/ICRC4";
 shared ({ caller = _owner }) actor class Token  (args: ?{
     icrc1 : ?ICRC1.InitArgs;
     icrc2 : ?ICRC2.InitArgs;
-    icrc3 : ?ICRC3.InitArgs;
+    icrc3 : ICRC3.InitArgs; //already typed nullable
 
     icrc4 : ?ICRC4.InitArgs;
   }
@@ -80,6 +76,24 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       maxRecordsToArchive = 8000;
       archiveCycles = 20_000_000_000_000;
       archiveControllers = null; //??[put cycle ops prinicpal here];
+      supportedBlocks = [
+        {
+          block_type = "1xfer"; 
+          url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+        },
+        {
+          block_type = "1approve"; 
+          url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+        },
+        {
+          block_type = "1mint"; 
+          url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+        },
+        {
+          block_type = "1burn"; 
+          url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+        }
+      ];
     };
 
     let default_icrc4_args : ICRC4.InitArgs = {
@@ -125,7 +139,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       case(?args){
         switch(args.icrc3){
           case(null) default_icrc3_args;
-          case(?val) val;
+          case(?val) ?val;
         };
       };
     };
@@ -253,11 +267,50 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     };
   };
 
+  func ensure_block_types(icrc3Class: ICRC3.ICRC3) : () {
+    let supportedBlocks = Buffer.fromIter<ICRC3.BlockType>(icrc3Class.supported_block_types().vals());
+
+    let blockequal = func(a : {block_type: Text}, b : {block_type: Text}) : Bool {
+      a.block_type == b.block_type;
+    };
+
+    if(Buffer.indexOf<ICRC3.BlockType>({block_type = "1xfer"; url="";}, supportedBlocks, blockequal) == null){
+      supportedBlocks.add({
+            block_type = "1xfer"; 
+            url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+          });
+    };
+
+    if(Buffer.indexOf<ICRC3.BlockType>({block_type = "1approve";url="";}, supportedBlocks, blockequal) == null){
+      supportedBlocks.add({
+            block_type = "1approve"; 
+            url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+          });
+    };
+
+    if(Buffer.indexOf<ICRC3.BlockType>({block_type = "1mint";url="";}, supportedBlocks, blockequal) == null){
+      supportedBlocks.add({
+            block_type = "1mint"; 
+            url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+          });
+    };
+
+    if(Buffer.indexOf<ICRC3.BlockType>({block_type = "1burn";url="";}, supportedBlocks, blockequal) == null){
+      supportedBlocks.add({
+            block_type = "1burn"; 
+            url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+          });
+    };
+
+    icrc3Class.update_supported_blocks(Buffer.toArray(supportedBlocks));
+  };
+
   func icrc3() : ICRC3.ICRC3 {
     switch(_icrc3){
       case(null){
         let initclass : ICRC3.ICRC3 = ICRC3.ICRC3(?icrc3_migration_state, Principal.fromActor(this), get_icrc3_environment());
         _icrc3 := ?initclass;
+        ensure_block_types(initclass);
         initclass;
       };
       case(?val) val;
@@ -368,12 +421,12 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     return icrc3().get_tip();
   };
 
-  public shared ({ caller }) func icrc4_transfer_batch(args: ICRC4.TransferBatchArgs) : async ICRC4.TransferBatchResult {
+  public shared ({ caller }) func icrc4_transfer_batch(args: ICRC4.TransferBatchArgs) : async ICRC4.TransferBatchResults {
       switch(await* icrc4().transfer_batch_tokens(caller, args, null, null)){
         case(#trappable(val)) val;
         case(#awaited(val)) val;
-        case(#err(#trappable(err))) D.trap(err);
-        case(#err(#awaited(err))) D.trap(err);
+        case(#err(#trappable(err))) err;
+        case(#err(#awaited(err))) err;
       };
   };
 
@@ -442,7 +495,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
   var lotto_timmer : ?Nat = null;
 
   /// Should be called whenever the is a transfer
-  private func transfer_listener(trx : ICRC1.Transaction, trxid : Nat) : () {
+  private func transfer_listener<system>(trx : ICRC1.Transaction, trxid : Nat) : () {
     // D.print("in transfer listener" # debug_show(trx));
     switch(trx.burn){
       case(?burn){

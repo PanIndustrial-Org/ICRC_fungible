@@ -19,16 +19,13 @@
 ///
 /////////////////////
 
-import Array "mo:base/Array";
+import Buffer "mo:base/Buffer";
 import D "mo:base/Debug";
 import ExperimentalCycles "mo:base/ExperimentalCycles";
-import Iter "mo:base/Iter";
-import Option "mo:base/Option";
+
 import Principal "mo:base/Principal";
 import Result "mo:base/Result";
-import Time "mo:base/Time";
 
-import CertifiedData "mo:base/CertifiedData";
 import CertTree "mo:cert/CertTree";
 
 import ICRC1 "mo:icrc1-mo/ICRC1";
@@ -39,7 +36,7 @@ import ICRC4 "mo:icrc4-mo/ICRC4";
 shared ({ caller = _owner }) actor class Token  (args: ?{
     icrc1 : ?ICRC1.InitArgs;
     icrc2 : ?ICRC2.InitArgs;
-    icrc3 : ?ICRC3.InitArgs;
+    icrc3 : ICRC3.InitArgs;//already typed nullable
 
     icrc4 : ?ICRC4.InitArgs;
   }
@@ -87,6 +84,24 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       maxRecordsToArchive = 8000;
       archiveCycles = 20_000_000_000_000;
       archiveControllers = null; //??[put cycle ops prinicpal here];
+      supportedBlocks = [
+        {
+          block_type = "1xfer"; 
+          url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+        },
+        {
+          block_type = "1approve"; 
+          url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+        },
+        {
+          block_type = "1mint"; 
+          url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+        },
+        {
+          block_type = "1burn"; 
+          url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+        }
+      ];
     };
 
     let default_icrc4_args : ICRC4.InitArgs = {
@@ -132,7 +147,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       case(?args){
         switch(args.icrc3){
           case(null) default_icrc3_args;
-          case(?val) val;
+          case(?val) ?val;
         };
       };
     };
@@ -258,11 +273,50 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     };
   };
 
+  func ensure_block_types(icrc3Class: ICRC3.ICRC3) : () {
+    let supportedBlocks = Buffer.fromIter<ICRC3.BlockType>(icrc3Class.supported_block_types().vals());
+
+    let blockequal = func(a : {block_type: Text}, b : {block_type: Text}) : Bool {
+      a.block_type == b.block_type;
+    };
+
+    if(Buffer.indexOf<ICRC3.BlockType>({block_type = "1xfer"; url="";}, supportedBlocks, blockequal) == null){
+      supportedBlocks.add({
+            block_type = "1xfer"; 
+            url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+          });
+    };
+
+    if(Buffer.indexOf<ICRC3.BlockType>({block_type = "1approve";url="";}, supportedBlocks, blockequal) == null){
+      supportedBlocks.add({
+            block_type = "1approve"; 
+            url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+          });
+    };
+
+    if(Buffer.indexOf<ICRC3.BlockType>({block_type = "1mint";url="";}, supportedBlocks, blockequal) == null){
+      supportedBlocks.add({
+            block_type = "1mint"; 
+            url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+          });
+    };
+
+    if(Buffer.indexOf<ICRC3.BlockType>({block_type = "1burn";url="";}, supportedBlocks, blockequal) == null){
+      supportedBlocks.add({
+            block_type = "1burn"; 
+            url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+          });
+    };
+
+    icrc3Class.update_supported_blocks(Buffer.toArray(supportedBlocks));
+  };
+
   func icrc3() : ICRC3.ICRC3 {
     switch(_icrc3){
       case(null){
         let initclass : ICRC3.ICRC3 = ICRC3.ICRC3(?icrc3_migration_state, Principal.fromActor(this), get_icrc3_environment());
         _icrc3 := ?initclass;
+        ensure_block_types(initclass);
         initclass;
       };
       case(?val) val;
@@ -369,12 +423,12 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       };
   };
 
-  public shared ({ caller }) func icrc4_transfer_batch(args: ICRC4.TransferBatchArgs) : async ICRC4.TransferBatchResult {
+  public shared ({ caller }) func icrc4_transfer_batch(args: ICRC4.TransferBatchArgs) : async ICRC4.TransferBatchResults {
       switch(await* icrc4().transfer_batch_tokens(caller, args, ?#Sync(can_transfer), ?#Sync(can_transfer_batch))){
         case(#trappable(val)) val;
         case(#awaited(val)) val;
-        case(#err(#trappable(err))) D.trap(err);
-        case(#err(#awaited(err))) D.trap(err);
+        case(#err(#trappable(err))) err;
+        case(#err(#awaited(err))) err;
       };
   };
 
@@ -469,7 +523,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
   };
 
 
-  private func can_transfer(trx: ICRC1.Value, trxtop: ?ICRC1.Value, notification: ICRC1.TransactionRequestNotification) : Result.Result<(trx: ICRC1.Value, trxtop: ?ICRC1.Value, notification: ICRC1.TransactionRequestNotification), Text>{
+  private func can_transfer<system>(trx: ICRC1.Value, trxtop: ?ICRC1.Value, notification: ICRC1.TransactionRequestNotification) : Result.Result<(trx: ICRC1.Value, trxtop: ?ICRC1.Value, notification: ICRC1.TransactionRequestNotification), Text>{
     if(Set.has<Principal>(allowlist, Set.phash, notification.from.owner)){
       return #ok(trx, update_fee(trxtop,0), {notification with 
         calculated_fee = 0;});
@@ -477,7 +531,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     return #err("Not allowed");
   };
 
-  private func can_approve(trx: ICRC2.Value, trxtop: ?ICRC2.Value, notification: ICRC2.TokenApprovalNotification) : Result.Result<(trx: ICRC2.Value, trxtop: ?ICRC2.Value, notification: ICRC2.TokenApprovalNotification), Text>{
+  private func can_approve<system>(trx: ICRC2.Value, trxtop: ?ICRC2.Value, notification: ICRC2.TokenApprovalNotification) : Result.Result<(trx: ICRC2.Value, trxtop: ?ICRC2.Value, notification: ICRC2.TokenApprovalNotification), Text>{
     if(Set.has<Principal>(allowlist, Set.phash, notification.from.owner)){
       return #ok(trx,update_fee(trxtop,0),{notification with 
         calculated_fee = 0;});
@@ -485,7 +539,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     return #err("Not allowed");
   };
 
-  private func can_transfer_from(trx: ICRC2.Value, trxtop: ?ICRC2.Value, notification: ICRC2.TransferFromNotification) : Result.Result<(trx: ICRC2.Value, trxtop: ?ICRC2.Value, notification: ICRC2.TransferFromNotification), Text>{
+  private func can_transfer_from<system>(trx: ICRC2.Value, trxtop: ?ICRC2.Value, notification: ICRC2.TransferFromNotification) : Result.Result<(trx: ICRC2.Value, trxtop: ?ICRC2.Value, notification: ICRC2.TransferFromNotification), Text>{
     if(Set.has<Principal>(allowlist, Set.phash, notification.from.owner)){
       return #ok(trx,update_fee(trxtop,0),{notification with 
         calculated_fee = 0;});
@@ -493,11 +547,11 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     return #err("Not allowed");
   };
 
-  private func can_transfer_batch(notification: ICRC4.TransferBatchNotification) : Result.Result<(notification: ICRC4.TransferBatchNotification), Text>{
+  private func can_transfer_batch<system>(notification: ICRC4.TransferBatchNotification) : Result.Result<(notification: ICRC4.TransferBatchNotification), ICRC4.TransferBatchResults>{
     if(Set.has<Principal>(allowlist, Set.phash, notification.from)){
       return #ok(notification);
     };
-    return #err("Not allowed");
+    return #err([?#Err(#GenericBatchError({message = "Not allowed"; error_code = 1}))]);
   };
 
   public shared ({ caller }) func admin_update_allowlist(request : [{principal: Principal; allow: Bool}]) : async () {
