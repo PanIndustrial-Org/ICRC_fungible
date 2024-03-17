@@ -5,23 +5,23 @@
         "token": {
           "type": "motoko",
           "main": "src/Token.mo",
-          "args": "-v --compacting-gc"
+          "args": "-v --incremental-gc"
         },
         "prodtoken": {
           "type": "motoko",
           "gzip": true,
           "main": "src/Token.mo",
-          "args": "--compacting-gc --release"
+          "args": "--incremental-gc --release"
         },
         "allowlist": {
           "type": "motoko",
           "main": "src/examples/Allowlist.mo",
-          "args": "-v --compacting-gc"
+          "args": "-v --incremental-gc"
         },
         "lotto": {
           "type": "motoko",
           "main": "src/examples/Lotto.mo",
-          "args": "-v --compacting-gc"
+          "args": "-v --incremental-gc"
         }
     },
     "defaults": {
