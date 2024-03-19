@@ -90,7 +90,11 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
           url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
         },
         {
-          block_type = "1approve"; 
+          block_type = "2xfer"; 
+          url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+        },
+        {
+          block_type = "2approve"; 
           url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
         },
         {
@@ -287,9 +291,16 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
           });
     };
 
-    if(Buffer.indexOf<ICRC3.BlockType>({block_type = "1approve";url="";}, supportedBlocks, blockequal) == null){
+    if(Buffer.indexOf<ICRC3.BlockType>({block_type = "2xfer"; url="";}, supportedBlocks, blockequal) == null){
       supportedBlocks.add({
-            block_type = "1approve"; 
+            block_type = "2xfer"; 
+            url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+          });
+    };
+
+    if(Buffer.indexOf<ICRC3.BlockType>({block_type = "2approve";url="";}, supportedBlocks, blockequal) == null){
+      supportedBlocks.add({
+            block_type = "2approve"; 
             url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
           });
     };

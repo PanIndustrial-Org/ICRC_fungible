@@ -1,10 +1,10 @@
 [dependencies]
 base = "0.11.0"
 cert = "https://github.com/nomeata/ic-certification#v0.1.3@c403ffec0a60f658a1009976c785aa567ff0da77"
-icrc1-mo = "0.0.14"
-icrc2-mo = "0.0.12"
+icrc1-mo = "0.0.15"
+icrc2-mo = "0.0.13"
 icrc3-mo = "0.2.4"
-icrc4-mo = "0.0.4"
+icrc4-mo = "0.0.5"
 
 [dev-dependencies]
 test = "1.2.0"
@@ -13,7 +13,16 @@ matchers = "https://github.com/kritzcreek/motoko-matchers#v1.3.0@3dac8a071b69e4e
 
 [package]
 name = "icrc-fungible"
-version = "0.0.3"
+version = "0.0.4"
 description = "ICRC1, ICRC2, ICRC3, ICRC4, and ICRC61 fungible token for motoko"
 repository = "https://github.com/PanIndustrial-Org/ICRC_fungible"
-keywords = [ "icrc2", "icrc1", "icrc3", "icrc4", "icrc61", "fungible", "token", "standard" ]
+keywords = [
+  "icrc2",
+  "icrc1",
+  "icrc3",
+  "icrc4",
+  "icrc61",
+  "fungible",
+  "token",
+  "standard"
+]
