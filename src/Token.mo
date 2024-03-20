@@ -179,8 +179,8 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
           url = "https://github.com/dfinity/ICRC/ICRCs/icrc-3/"
         });
         ignore initclass.register_supported_standards({
-          name = "ICRC-61";
-          url = "https://github.com/dfinity/ICRC/ICRCs/icrc-61/"
+          name = "ICRC-10";
+          url = "https://github.com/dfinity/ICRC/ICRCs/icrc-10/"
         });
         _icrc1 := ?initclass;
         initclass;
@@ -372,7 +372,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       icrc1().supported_standards();
   };
 
-  public shared query func icrc61_supported_standards() : async [ICRC1.SupportedStandard] {
+  public shared query func icrc10_supported_standards() : async [ICRC1.SupportedStandard] {
       icrc1().supported_standards();
   };
 

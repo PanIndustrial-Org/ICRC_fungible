@@ -13,15 +13,15 @@ matchers = "https://github.com/kritzcreek/motoko-matchers#v1.3.0@3dac8a071b69e4e
 
 [package]
 name = "icrc-fungible"
-version = "0.0.4"
-description = "ICRC1, ICRC2, ICRC3, ICRC4, and ICRC61 fungible token for motoko"
+version = "0.0.5"
+description = "ICRC1, ICRC2, ICRC3, ICRC4, and ICRC10 fungible token for motoko"
 repository = "https://github.com/PanIndustrial-Org/ICRC_fungible"
 keywords = [
   "icrc2",
   "icrc1",
   "icrc3",
   "icrc4",
-  "icrc61",
+  "icrc10",
   "fungible",
   "token",
   "standard"
