@@ -22,8 +22,8 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
 ) = this{
 
     let default_icrc1_args : ICRC1.InitArgs = {
-      name = ?"Test Token";
-      symbol = ?"TTT";
+      name = ?"ICDevs";
+      symbol = ?"ICDevs";
       logo = ?"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMSIgaGVpZ2h0PSIxIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InJlZCIvPjwvc3ZnPg==";
       decimals = 8;
       fee = ?#Fixed(10000);
@@ -59,7 +59,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       maxArchivePages = 62500;
       archiveIndexType = #Stable;
       maxRecordsToArchive = 8000;
-      archiveCycles = 20_000_000_000_000;
+      archiveCycles = 6_000_000_000_000;
       archiveControllers = null; //??[put cycle ops prinicpal here];
       supportedBlocks = [
         {
