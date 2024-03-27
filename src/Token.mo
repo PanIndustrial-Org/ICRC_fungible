@@ -417,6 +417,10 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
 
   public shared ({ caller }) func mintFromICP(args : Types.MintFromICPArgs) : async ICRC1.TransferResult {
 
+      if(args.amount < 1000000) {
+        D.trap("Minimum mint amount is 0.01 ICP");
+      };
+
       let ICPLedger : ICPTypes.Service = actor("ryjl3-tyaaa-aaaaa-aaaba-cai");
 
       let result = try{
