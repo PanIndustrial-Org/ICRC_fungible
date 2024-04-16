@@ -1,5 +1,8 @@
 {
   "prodtoken" :{
     "ic" : "agtsn-xyaaa-aaaag-ak3kq-cai"
+  },
+  "nns-ledger" :{
+    "ic" : "ryjl3-tyaaa-aaaaa-aaaba-cai"
   }
 }

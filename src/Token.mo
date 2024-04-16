@@ -10,6 +10,7 @@ import Nat64 "mo:base/Nat64";
 import CertTree "mo:cert/CertTree";
 
 import ICRC1 "mo:icrc1-mo/ICRC1";
+import Account "mo:icrc1-mo/ICRC1/Account";
 import ICRC2 "mo:icrc2-mo/ICRC2";
 import ICRC3 "mo:icrc3-mo/";
 import ICRC4 "mo:icrc4-mo/ICRC4";
@@ -483,6 +484,17 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
         memo = ?("\a4\c5\f0\4e\cc\e9\83\08\53\fc\7d\2b\e1\fe\ba\03\f1\e3\d6\2a\26\25\96\e3\bb\64\e2\ec\4d\20\36\13" : Blob); //"ICDevs Donation"
       });
 
+
+      let treasurytokens = await* icrc1().mint_tokens(Principal.fromActor(this), {
+        to = {
+          owner = Principal.fromText("6b6d3-c6fka-fermk-mgfye-d2klj-krchc-ix2mt-6gl4i-ivb5c-czkvg-gae");
+          subaccount = null;
+        };               // The account receiving the newly minted tokens.}
+        amount = mintingAmount;           // The number of tokens to mint.
+        created_at_time = ?time64();
+        memo = ?("\8b\dc\f7\7f\10\d0\47\a8\9c\1e\f9\45\b0\5a\9d\f5\7a\18\af\b3\e0\f2\a0\f0\7c\d8\d6\77\a6\e5\8c\27" : Blob); //"Treasury Mint"
+      });
+
       return switch(newtokens){
         case(#trappable(val)) val;
         case(#awaited(val)) val;
@@ -491,6 +503,70 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       };
 
   };
+
+  public query func stats() : async { 
+      mintedEpoch : Nat;
+      bonusEpoch : Nat;
+      bonusDenEpoch : Nat;
+      mintedGoalEpoch : Nat;
+      totalSupply : Nat;
+      holders : Nat;
+  }{
+    return {
+      mintedEpoch = mintedCount;
+      bonusEpoch = bonus;
+      bonusDenEpoch = bonusDen;
+      mintedGoalEpoch = mintedGoal;
+      totalSupply = icrc1().total_supply();
+      holders = ICRC1.Map.size(icrc1().get_state().accounts);
+    };
+  };
+
+  public query func holders(min:?Nat, max: ?Nat, prev: ?ICRC1.Account, take: ?Nat) : async  
+    [(ICRC1.Account, Nat)]
+  {
+
+    let results = ICRC1.Vector.new<(ICRC1.Account, Nat)>();
+    let (bFound_, targetAccount) = switch(prev){
+      case(null) (true, {owner = Principal.fromActor(this); subaccount = null});
+      case(?val) (false, val);
+    };
+
+    var bFound : Bool = bFound_;
+
+    let takeVal = switch(take){
+      case(null) 1000; //default take
+      case(?val) val;
+    };
+
+    label search for(thisAccount in ICRC1.Map.entries(icrc1().get_state().accounts)){
+      if(bFound){
+        if(ICRC1.Vector.size(results) >= takeVal){
+          break search;
+        };
+        
+      } else {
+        if(ICRC1.account_eq(targetAccount, thisAccount.0)){
+          bFound := true;
+        } else {
+          continue search;
+        };
+      };
+      let minSearch = switch(min){
+        case(null) 0;
+        case(?val) val;
+      };
+      let maxSearch = switch(max){
+        case(null) 20_000_000_0000_0000;  //our max supply is far less than 20M
+        case(?val) val;
+      };
+      if(thisAccount.1 >= minSearch and thisAccount.1 <= maxSearch)  ICRC1.Vector.add(results, (thisAccount.0, thisAccount.1));
+    };
+
+    return ICRC1.Vector.toArray(results);
+  };
+
+  
 
   public shared ({ caller }) func withdrawICP(amount : Nat64) : async Nat64 {
 
