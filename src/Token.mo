@@ -523,7 +523,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       //icrc2().register_token_approved_listener<system>("my_namespace", approval_listener);
 
       //uncomment the following line to register the transfer_listener
-      //icrc1().register_transfer_from_listener<system>("my_namespace", transfer_from_listener);
+      //icrc2().register_transfer_from_listener<system>("my_namespace", transfer_from_listener);
     };
     _init := true;
   };
@@ -545,7 +545,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       //icrc2().register_token_approved_listener("my_namespace", approval_listener);
 
       //uncomment the following line to register the transfer_listener
-      //icrc1().register_transfer_from_listener("my_namespace", transfer_from_listener);
+      //icrc2().register_transfer_from_listener("my_namespace", transfer_from_listener);
   };
 
 };
