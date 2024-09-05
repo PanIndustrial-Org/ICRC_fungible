@@ -592,6 +592,54 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       result;
   };
 
+  public shared ({ caller }) func withdrawICRC1(canister : Principal, transfer: TransferArgs) : async Nat {
+    if(caller != owner){ D.trap("Unauthorized")};
+      let ICPLedger : ICPTypes.Service = actor(canister);
+      let result = try{
+        await ICPLedger.icrc1_transfer(transfer);
+      } catch(e){
+        D.trap("cannot transfer from failed" # Error.message(e));
+      };
+      result;
+  };
+
+  public shared ({ caller }) func getBalancesICRC1() : async (Principal, Nat) {
+    if(caller != owner){ D.trap("Unauthorized")};
+
+    let results = Buffer.Buffer<(Principal, Nat)>(1);
+
+    type TokenInfo = {
+      tokenCanister: Principal;
+      tokenSymbol: Text;
+      tokenDecimals: Nat8;
+      tokenPointer: ?Nat;
+      tokenFee: ?Nat;
+      tokenTotalSupply: Nat;
+      standards: [Text];
+    };
+
+    let ICRC79Actor: actor {
+      get_token_info : () -> [TokenInfo];
+    } = actor("fe5iu-uiaaa-aaaal-ajxea-cai");
+
+    let tokens = await ICRC79Actor.get_token_info();
+
+    let subaccount = Blob.fromArray([39,167,236,212,75,183,197,29,163,240,112,67,54,45,238,71,220,227,55,132,102,170,154,183,149,180,185,26,233,48,38,105]); //org.icdevs.subscription.collector
+
+    for(thisToken in tokens){
+      let ICPLedger : ICPTypes.Service = actor(thisToken.tokenCanister);
+      let result = try{
+        await ICPLedger.icrc1_balance_of({owner = Principal.fromActor(this); subaccount = ?subaccount});
+      } catch(e){};
+
+      if(result > 0){
+        return (thisToken.tokenCanister, result);
+      };
+    };
+
+    Buffer.toArrray(results);
+  };
+
   public shared ({ caller }) func burn(args : ICRC1.BurnArgs) : async ICRC1.TransferResult {
       switch( await*  icrc1().burn_tokens(caller, args, false)){
         case(#trappable(val)) val;
