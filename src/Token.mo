@@ -607,6 +607,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     if(caller != owner){ D.trap("Unauthorized")};
 
     let results = Buffer.Buffer<(Principal, Nat)>(1);
+    let futuresBuffer = Buffer.Buffer<async Nat>(1);
 
     type TokenInfo = {
       tokenCanister: Principal;
@@ -629,11 +630,23 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     for(thisToken in tokens){
       let ICPLedger : ICPTypes.Service = actor(thisToken.tokenCanister);
       let result = try{
-        await ICPLedger.icrc1_balance_of({owner = Principal.fromActor(this); subaccount = ?subaccount});
+        futuresBuffer.add( ICPLedger.icrc1_balance_of({owner = Principal.fromActor(this); subaccount = ?subaccount}));
       } catch(e){};
 
+      if(futuresBuffer.size() > 8){
+        for(thisItem in futuresBuffer){
+          let result = await thisItem;
+          if(result > 0){
+            results.add((thisToken.tokenCanister, result));
+          };
+        };
+      };
+    };
+
+    for(thisItem in futuresBuffer){
+      let result = await thisItem;
       if(result > 0){
-        return (thisToken.tokenCanister, result);
+        results.add((thisToken.tokenCanister, result));
       };
     };
 
