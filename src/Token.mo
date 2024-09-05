@@ -6,12 +6,22 @@ import Principal "mo:base/Principal";
 import Time "mo:base/Time";
 
 import CertifiedData "mo:base/CertifiedData";
+import Nat64 "mo:base/Nat64";
 import CertTree "mo:cert/CertTree";
 
 import ICRC1 "mo:icrc1-mo/ICRC1";
+import Account "mo:icrc1-mo/ICRC1/Account";
 import ICRC2 "mo:icrc2-mo/ICRC2";
 import ICRC3 "mo:icrc3-mo/";
 import ICRC4 "mo:icrc4-mo/ICRC4";
+
+///Custom ICDevs Token Code
+import Types "Types";
+import Blob "mo:base/Blob";
+import Error "mo:base/Error";
+import Int "mo:base/Int";
+import ICPTypes "ICPTypes";
+
 
 shared ({ caller = _owner }) actor class Token  (args: ?{
     icrc1 : ?ICRC1.InitArgs;
@@ -21,9 +31,11 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
   }
 ) = this{
 
+    let Set = ICRC1.Set;
+
     let default_icrc1_args : ICRC1.InitArgs = {
-      name = ?"Test Token";
-      symbol = ?"TTT";
+      name = ?"ICDevs";
+      symbol = ?"ICDevs";
       logo = ?"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMSIgaGVpZ2h0PSIxIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InJlZCIvPjwvc3ZnPg==";
       decimals = 8;
       fee = ?#Fixed(10000);
@@ -59,7 +71,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       maxArchivePages = 62500;
       archiveIndexType = #Stable;
       maxRecordsToArchive = 8000;
-      archiveCycles = 20_000_000_000_000;
+      archiveCycles = 6_000_000_000_000;
       archiveControllers = null; //??[put cycle ops prinicpal here];
       supportedBlocks = [
         {
@@ -149,7 +161,6 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     stable let icrc3_migration_state = ICRC3.init(ICRC3.initialState(), #v0_1_0(#id), icrc3_args, _owner);
     stable let cert_store : CertTree.Store = CertTree.newStore();
     let ct = CertTree.Ops(cert_store);
-
 
     stable var owner = _owner;
 
@@ -394,6 +405,252 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
         case(#err(#trappable(err))) D.trap(err);
         case(#err(#awaited(err))) D.trap(err);
       };
+  };
+
+  private func time64() : Nat64 {
+    Nat64.fromNat(Int.abs(Time.now()));
+  };
+
+  stable var bonus : Nat = 1000_0000_0000;
+  stable var bonusDen : Nat = 1_0000_0000;
+  stable var mintedCount = 0;
+  stable var mintedGoal = 1_000_000_0000_0000;
+
+  public shared ({ caller }) func mintFromICP(args : Types.MintFromICPArgs) : async ICRC1.TransferResult {
+
+      if(args.amount < 1000000) {
+        D.trap("Minimum mint amount is 0.01 ICP");
+      };
+
+      let ICPLedger : ICPTypes.Service = actor("ryjl3-tyaaa-aaaaa-aaaba-cai");
+
+      let result = try{
+        await ICPLedger.icrc2_transfer_from({
+          to = {
+            owner = Principal.fromActor(this);
+            subaccount = null;
+          };
+          fee = null;
+          spender_subaccount = null;
+          from = {
+            owner = caller;
+            subaccount = args.source_subaccount;
+          };
+          memo = ?Blob.toArray("\a4\c5\f0\4e\cc\e9\83\08\53\fc\7d\2b\e1\fe\ba\03\f1\e3\d6\2a\26\25\96\e3\bb\64\e2\ec\4d\20\36\13" : Blob); //"ICDevs Donation"
+          created_at_time = ?time64();
+          amount = args.amount-10000;
+        });
+      } catch(e){
+        D.trap("cannot transfer from failed" # Error.message(e));
+      };
+
+      let block = switch(result){
+        case(#Ok(block)) block;
+        case(#Err(err)){
+            D.trap("cannot transfer from failed" # debug_show(err));
+        };
+      };
+
+
+      let mintingAmount = (bonus/bonusDen) * args.amount;
+      mintedCount += mintingAmount;
+
+      //recalculate bonus
+      if(mintedCount > mintedGoal){
+        bonus := bonus/2;
+        mintedCount := 0;
+      };
+
+      let newtokens = await* icrc1().mint_tokens(Principal.fromActor(this), {
+        to = switch(args.target){
+            case(null){
+              {
+                owner = caller;
+                subaccount = null;
+              }
+            };
+            case(?val) {
+              {
+                owner = val.owner;
+                subaccount = switch(val.subaccount){
+                  case(null) null;
+                  case(?val) ?Blob.fromArray(val);
+                };
+              }
+            };
+          };               // The account receiving the newly minted tokens.
+        amount = mintingAmount;           // The number of tokens to mint.
+        created_at_time = ?time64();
+        memo = ?("\a4\c5\f0\4e\cc\e9\83\08\53\fc\7d\2b\e1\fe\ba\03\f1\e3\d6\2a\26\25\96\e3\bb\64\e2\ec\4d\20\36\13" : Blob); //"ICDevs Donation"
+      });
+
+
+      let treasurytokens = await* icrc1().mint_tokens(Principal.fromActor(this), {
+        to = {
+          owner = Principal.fromText("6b6d3-c6fka-fermk-mgfye-d2klj-krchc-ix2mt-6gl4i-ivb5c-czkvg-gae");
+          subaccount = null;
+        };               // The account receiving the newly minted tokens.}
+        amount = mintingAmount;           // The number of tokens to mint.
+        created_at_time = ?time64();
+        memo = ?("\8b\dc\f7\7f\10\d0\47\a8\9c\1e\f9\45\b0\5a\9d\f5\7a\18\af\b3\e0\f2\a0\f0\7c\d8\d6\77\a6\e5\8c\27" : Blob); //"Treasury Mint"
+      });
+
+      return switch(newtokens){
+        case(#trappable(val)) val;
+        case(#awaited(val)) val;
+        case(#err(#trappable(err))) D.trap(err);
+        case(#err(#awaited(err))) D.trap(err);
+      };
+
+  };
+
+  public query func stats() : async { 
+      mintedEpoch : Nat;
+      bonusEpoch : Nat;
+      bonusDenEpoch : Nat;
+      mintedGoalEpoch : Nat;
+      totalSupply : Nat;
+      holders : Nat;
+  }{
+    return {
+      mintedEpoch = mintedCount;
+      bonusEpoch = bonus;
+      bonusDenEpoch = bonusDen;
+      mintedGoalEpoch = mintedGoal;
+      totalSupply = icrc1().total_supply();
+      holders = ICRC1.Map.size(icrc1().get_state().accounts);
+    };
+  };
+
+  public query func holders(min:?Nat, max: ?Nat, prev: ?ICRC1.Account, take: ?Nat) : async  
+    [(ICRC1.Account, Nat)]
+  {
+
+    let results = ICRC1.Vector.new<(ICRC1.Account, Nat)>();
+    let (bFound_, targetAccount) = switch(prev){
+      case(null) (true, {owner = Principal.fromActor(this); subaccount = null});
+      case(?val) (false, val);
+    };
+
+    var bFound : Bool = bFound_;
+
+    let takeVal = switch(take){
+      case(null) 1000; //default take
+      case(?val) val;
+    };
+
+    label search for(thisAccount in ICRC1.Map.entries(icrc1().get_state().accounts)){
+      if(bFound){
+        if(ICRC1.Vector.size(results) >= takeVal){
+          break search;
+        };
+        
+      } else {
+        if(ICRC1.account_eq(targetAccount, thisAccount.0)){
+          bFound := true;
+        } else {
+          continue search;
+        };
+      };
+      let minSearch = switch(min){
+        case(null) 0;
+        case(?val) val;
+      };
+      let maxSearch = switch(max){
+        case(null) 20_000_000_0000_0000;  //our max supply is far less than 20M
+        case(?val) val;
+      };
+      if(thisAccount.1 >= minSearch and thisAccount.1 <= maxSearch)  ICRC1.Vector.add(results, (thisAccount.0, thisAccount.1));
+    };
+
+    return ICRC1.Vector.toArray(results);
+  };
+
+  
+
+  public shared ({ caller }) func withdrawICP(amount : Nat64) : async Nat64 {
+
+    if(amount < 2_0000_0000){
+      D.trap("Minimum withdrawal amount is 2 ICP");
+    };
+
+      let ICPLedger : ICPTypes.Service = actor("ryjl3-tyaaa-aaaaa-aaaba-cai");
+
+      let result = try{
+        await ICPLedger.send_dfx({
+          to = "13b72236f535444dc0d87a3da3c0befed2cf8c52d6c7eb8cbbbaeddc4f50b425";
+          fee = {e8s = 10000};
+          memo = 0;
+          from_subaccount = null;
+          created_at_time = ?{timestamp_nanos = time64()};
+          amount= {e8s = amount-20000};
+        });
+      } catch(e){
+        D.trap("cannot transfer from failed" # Error.message(e));
+      };
+
+      result;
+  };
+
+  public shared ({ caller }) func withdrawICRC1(canister : Principal, transfer: TransferArgs) : async Nat {
+    if(caller != owner){ D.trap("Unauthorized")};
+      let ICPLedger : ICPTypes.Service = actor(canister);
+      let result = try{
+        await ICPLedger.icrc1_transfer(transfer);
+      } catch(e){
+        D.trap("cannot transfer from failed" # Error.message(e));
+      };
+      result;
+  };
+
+  public shared ({ caller }) func getBalancesICRC1() : async (Principal, Nat) {
+    if(caller != owner){ D.trap("Unauthorized")};
+
+    let results = Buffer.Buffer<(Principal, Nat)>(1);
+    let futuresBuffer = Buffer.Buffer<async Nat>(1);
+
+    type TokenInfo = {
+      tokenCanister: Principal;
+      tokenSymbol: Text;
+      tokenDecimals: Nat8;
+      tokenPointer: ?Nat;
+      tokenFee: ?Nat;
+      tokenTotalSupply: Nat;
+      standards: [Text];
+    };
+
+    let ICRC79Actor: actor {
+      get_token_info : () -> [TokenInfo];
+    } = actor("fe5iu-uiaaa-aaaal-ajxea-cai");
+
+    let tokens = await ICRC79Actor.get_token_info();
+
+    let subaccount = Blob.fromArray([39,167,236,212,75,183,197,29,163,240,112,67,54,45,238,71,220,227,55,132,102,170,154,183,149,180,185,26,233,48,38,105]); //org.icdevs.subscription.collector
+
+    for(thisToken in tokens){
+      let ICPLedger : ICPTypes.Service = actor(thisToken.tokenCanister);
+      let result = try{
+        futuresBuffer.add( ICPLedger.icrc1_balance_of({owner = Principal.fromActor(this); subaccount = ?subaccount}));
+      } catch(e){};
+
+      if(futuresBuffer.size() > 8){
+        for(thisItem in futuresBuffer){
+          let result = await thisItem;
+          if(result > 0){
+            results.add((thisToken.tokenCanister, result));
+          };
+        };
+      };
+    };
+
+    for(thisItem in futuresBuffer){
+      let result = await thisItem;
+      if(result > 0){
+        results.add((thisToken.tokenCanister, result));
+      };
+    };
+
+    Buffer.toArrray(results);
   };
 
   public shared ({ caller }) func burn(args : ICRC1.BurnArgs) : async ICRC1.TransferResult {
