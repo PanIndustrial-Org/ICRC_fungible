@@ -20,7 +20,9 @@ import Time "mo:base/Time";
 import Timer "mo:base/Timer";
 import Random "mo:base/Random";
 
-import CertTree "mo:cert/CertTree";
+import CertTree "mo:ic-certification/CertTree";
+
+import ClassPlus "mo:class-plus";
 
 import ICRC1 "mo:icrc1-mo/ICRC1";
 import ICRC2 "mo:icrc2-mo/ICRC2";
@@ -35,6 +37,9 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     icrc4 : ?ICRC4.InitArgs;
   }
 ) = this{
+
+    let manager = ClassPlus.ClassPlusInitializationManager(_owner, Principal.fromActor(this), true);
+
 
     let default_icrc1_args : ICRC1.InitArgs = {
       name = ?"Lotto";
@@ -67,7 +72,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       settle_to_approvals = ?9990000;
     };
 
-    let default_icrc3_args : ICRC3.InitArgs = ?{
+    let default_icrc3_args : ICRC3.InitArgs = {
       maxActiveRecords = 3000;
       settleToRecords = 2000;
       maxRecordsInArchiveInstance = 100000000;
@@ -76,11 +81,11 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       maxRecordsToArchive = 8000;
       archiveCycles = 20_000_000_000_000;
       archiveControllers = null; //??[put cycle ops prinicpal here];
-      supportedBlocks = [
+      supportedBlocks : [ICRC3.BlockType] = [
         {
           block_type = "1xfer"; 
           url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
-        },
+        } : ICRC3.BlockType,
         {
           block_type = "2xfer"; 
           url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
@@ -142,9 +147,9 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     let icrc3_args : ICRC3.InitArgs = switch(args){
       case(null) default_icrc3_args;
       case(?args){
-        switch(args.icrc3){
+        switch(?args.icrc3){
           case(null) default_icrc3_args;
-          case(?val) ?val;
+          case(?val) val;
         };
       };
     };
@@ -161,12 +166,14 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
 
     stable let icrc1_migration_state = ICRC1.init(ICRC1.initialState(), #v0_1_0(#id),?icrc1_args, _owner);
     stable let icrc2_migration_state = ICRC2.init(ICRC2.initialState(), #v0_1_0(#id),?icrc2_args, _owner);
-    stable let icrc3_migration_state = ICRC3.init(ICRC3.initialState(), #v0_1_0(#id),icrc3_args, _owner);
+    stable let icrc3_migration_state = ICRC3.initialState();
     stable let icrc4_migration_state = ICRC4.init(ICRC4.initialState(), #v0_1_0(#id),?icrc4_args, _owner);
     stable let cert_store : CertTree.Store = CertTree.newStore();
     let ct = CertTree.Ops(cert_store);
 
     stable var owner = _owner;
+
+    stable var icrc3_migration_state_new = icrc3_migration_state;
 
     let #v0_1_0(#data(icrc1_state_current)) = icrc1_migration_state;
 
@@ -237,8 +244,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     {
       icrc1 = icrc1();
       get_fee = null;
-      can_approve = null; //set to a function to intercept and add validation logic for approvals
-      can_transfer_from = null; //set to a function to intercept and add validation logic for transfer froms
+      
     };
   };
 
@@ -253,23 +259,21 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     };
   };
 
-  let #v0_1_0(#data(icrc3_state_current)) = icrc3_migration_state;
+  private func updated_certification(cert: Blob, lastIndex: Nat) : Bool{
 
-  private var _icrc3 : ?ICRC3.ICRC3 = null;
-
-  private func get_icrc3_state() : ICRC3.CurrentState {
-    return icrc3_state_current;
+    ct.setCertifiedData();
+    return true;
   };
 
-  func get_state() : ICRC3.CurrentState{
-    return icrc3_state_current;
+  private func get_certificate_store() : CertTree.Store {
+    return cert_store;
   };
 
-  private func get_icrc3_environment() : ICRC3.Environment {
-    ?{
-      updated_certification = ?updated_certification;
-      get_certificate_store = ?get_certificate_store;
-    };
+  private func get_icrc3_environment() : ICRC3.Environment{
+      {
+        updated_certification = ?updated_certification;
+        get_certificate_store = ?get_certificate_store;
+      };
   };
 
   func ensure_block_types(icrc3Class: ICRC3.ICRC3) : () {
@@ -317,27 +321,23 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     icrc3Class.update_supported_blocks(Buffer.toArray(supportedBlocks));
   };
 
-  func icrc3() : ICRC3.ICRC3 {
-    switch(_icrc3){
-      case(null){
-        let initclass : ICRC3.ICRC3 = ICRC3.ICRC3(?icrc3_migration_state, Principal.fromActor(this), get_icrc3_environment());
-        _icrc3 := ?initclass;
-        ensure_block_types(initclass);
-        initclass;
-      };
-      case(?val) val;
+ 
+
+  let icrc3 = ICRC3.Init<system>({
+    manager = manager;
+    initialState = icrc3_migration_state_new;
+    args = ?icrc3_args;
+    pullEnvironment = ?get_icrc3_environment;
+    onInitialize = ?(func(newClass: ICRC3.ICRC3) : async*(){
+       ensure_block_types(newClass);
+       
+    });
+    onStorageChange = func(state: ICRC3.State){
+      icrc3_migration_state_new := state;
     };
-  };
+  });
 
-  private func updated_certification(cert: Blob, lastIndex: Nat) : Bool{
-
-    ct.setCertifiedData();
-    return true;
-  };
-
-  private func get_certificate_store() : CertTree.Store {
-    return cert_store;
-  };
+  
 
 
   /// Functions for the ICRC1 token standard
@@ -488,7 +488,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
   // Deposit cycles into this canister.
   public shared func deposit_cycles() : async () {
       let amount = ExperimentalCycles.available();
-      let accepted = ExperimentalCycles.accept(amount);
+      let accepted = ExperimentalCycles.accept<system>(amount);
       assert (accepted == amount);
   };
 
@@ -517,7 +517,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
         /// We add it to a vector to be processed after 100 seconds.
         Vector.add(lotto_list, (burn.from, burn.amount));
         if(lotto_timmer == null){
-          lotto_timmer := ?Timer.setTimer(#seconds(1), run_lotto);
+          lotto_timmer := ?Timer.setTimer<system>(#seconds(1), run_lotto);
         };
       };
       case(_){};
@@ -528,7 +528,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
   
 
   /// runs the lotto process on a timer
-  private func run_lotto() : async (){
+  private func run_lotto<system>() : async (){
     
     //D.print("in lotto run");
 
@@ -546,7 +546,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
           //add it back to be processed next round
           Vector.add(lotto_list, thisItem);
           if(lotto_timmer == null){
-            lotto_timmer := ?Timer.setTimer(#seconds(0), run_lotto);
+            lotto_timmer := ?Timer.setTimer<system>(#seconds(0), run_lotto);
           };
         };
         case(?coin){

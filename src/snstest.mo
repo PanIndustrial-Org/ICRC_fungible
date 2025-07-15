@@ -1,55 +1,191 @@
-/////////////////////
-///
-/// Sample token with allowlist
-///
-/// This token uses the base sample token but adds functions to handle the final authorization
-/// of transfers, approves, and transfers_from. The same effect could be accomplished by blocking 
-/// in the public functions, but we wanted to demonstrate the ability to intercept these calls
-/// as well as to update the values of the transaction.  In this instance, since everyone must be on an
-/// allow list we choose to override the fee to 0 if the user is on the allowlist.  Again we could do this
-/// via configuration by setting the fee to #Fixed(0) in the ICRC1 config, but we wanted to demonstrate the
-/// update pattern.
-///
-/// New valid principals can be added by calling the admin_update_allowlist(Principal, Bool) function.  The
-/// token owner is added durning initialization.
-///
-/// The only changes to the base code are the configuration of the can_transfer that is passed to transfer,
-/// and can_approve and can_transfer_from passed to the respective functions. Those functions and supporting infrastructure
-/// can be found at the end of the actor file. 
-///
-/////////////////////
-
 import Buffer "mo:base/Buffer";
 import D "mo:base/Debug";
 import ExperimentalCycles "mo:base/ExperimentalCycles";
 
 import Principal "mo:base/Principal";
-import Result "mo:base/Result";
+import Time "mo:base/Time";
 
+import CertifiedData "mo:base/CertifiedData";
 import CertTree "mo:ic-certification/CertTree";
-import ClassPlus "mo:class-plus";
 
 import ICRC1 "mo:icrc1-mo/ICRC1";
 import ICRC2 "mo:icrc2-mo/ICRC2";
+import ICRC2Service "mo:icrc2-mo/ICRC2/service";
+import ICRC3Legacy "mo:icrc3-mo/legacy";
 import ICRC3 "mo:icrc3-mo/";
 import ICRC4 "mo:icrc4-mo/ICRC4";
 
-shared ({ caller = _owner }) actor class Token  (args: ?{
-    icrc1 : ?ICRC1.InitArgs;
-    icrc2 : ?ICRC2.InitArgs;
-    icrc3 : ICRC3.InitArgs;//already typed nullable
+import Nat64 "mo:base/Nat64";
+import Error "mo:base/Error";
+import Iter "mo:base/Iter";
 
-    icrc4 : ?ICRC4.InitArgs;
-  }
+import UpgradeArchive = "mo:icrc3-mo/upgradeArchive";
+
+import ClassPlus "mo:class-plus";
+
+import SNSTypes "sns_types";
+
+
+shared ({ caller = _owner }) actor class Token  (args: SNSTypes.SNSLedgerArgument
 ) = this{
 
+    /* type NTNArgs = {
+      Init: {
+        minting_account: ICRC1.Account;
+        fee_collector_account: ?ICRC1.Account;
+        transfer_fee: Nat;
+        decimals: Nat;
+        token_symbol: Text;
+        token_name: Text;
+        metadata: ?[ICRC1.MetaDatum];
+        initial_balances: ?[(ICRC1.Account, ICRC1.Balance)];
+        archive_options: {
+          num_blocks_to_archive: Nat;
+          trigger_threshold: Nat;
+          controller_id: Principal;
+          max_transactions_per_response: ?Nat;
+          max_message_size_bytes: ?Nat;
+          cycles_for_archive_creation: ?Nat;
+          node_max_memory_size_bytes: ?Nat;
+        },
+        maximum_number_of_accounts: ?Nat;
+        accounts_overflow_trim_quantity: ?Nat;
+        max_memo_length: ?Nat;
+        feature_flags: ?{
+          icrc2: Bool;
+        }
+      }
+    };
+
+
+    let tempArgs : NTNArgs = {
+          Init = {
+              minting_account: {
+                  owner: _owner;
+                  subaccount: null;
+              };
+              fee_collector_account= ?{ owner: _owner; subaccount: null },\;
+              transfer_fee= 10000;
+              decimals = 8;
+              token_symbol = "tCOIN",
+              token_name = "Test Coin",
+              metadata = null;
+              initial_balances = null, //[{ owner: me, subaccount:[] }, 100000000000n]
+              archive_options ={
+                  num_blocks_to_archive = 1000;
+                  trigger_threshold = 3000;
+                  controller_id = _owner;
+                  max_transactions_per_response = null;
+                  max_message_size_bytes = null;
+                  cycles_for_archive_creation = ?1000_000_000_000;
+                  node_max_memory_size_bytes = null;
+              },
+              maximum_number_of_accounts = null,
+              accounts_overflow_trim_quantity = null,
+              max_memo_length = null,
+              feature_flags = [{ icrc2: true }],
+          },
+      }; */
+
+
+    let Map = ICRC2.Map;
+
+    D.print("loading the state");
     let manager = ClassPlus.ClassPlusInitializationManager(_owner, Principal.fromActor(this), true);
 
+    let defaultArgs : {
+      icrc1 : ?ICRC1.InitArgs;
+      icrc2 : ?ICRC2.InitArgs;
+      icrc3 : ?ICRC3.InitArgs;
+      icrc4 : ?ICRC4.InitArgs;
+    } =  switch(args) {
+      case(#Init(x)) { 
+          {
+            icrc1 = ?{
+              name = ?x.token_name;
+              symbol = ?x.token_symbol;
+              logo = ?"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMSIgaGVpZ2h0PSIxIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InJlZCIvPjwvc3ZnPg==";
+              decimals = switch(x.decimals){
+                case(?val) val;
+                case(null) 8 : Nat8;
+              };
+              fee = ?#Fixed(x.transfer_fee);
+              minting_account = ?x.minting_account;
+              max_supply = null;
+              min_burn_amount = null;
+              max_memo = null;
+              advanced_settings = null;
+              metadata = ?#Map(x.metadata);
+              fee_collector = x.fee_collector_account;
+              transaction_window = null;
+              permitted_drift = null;
+              max_accounts = null;
+              settle_to_accounts = null;
+            };
+            icrc2 = ?{
+              max_approvals_per_account = null;
+              max_allowance = ?#TotalSupply;
+              fee = ?#ICRC1;
+              advanced_settings = null;
+              max_approvals = null;
+              settle_to_approvals = null;
+            };
+            icrc3 = ?{
+              maxActiveRecords = Nat64.toNat(x.archive_options.trigger_threshold);
+              settleToRecords = Nat64.toNat(x.archive_options.trigger_threshold - x.archive_options.num_blocks_to_archive);
+              maxRecordsInArchiveInstance = 500_000;
+              maxArchivePages = 62500;
+              archiveIndexType = #Stable;
+              maxRecordsToArchive = 8000;
+              archiveCycles = switch(x.archive_options.cycles_for_archive_creation) {
+                case(?val) Nat64.toNat(val);
+                case(null) 1_0000_000_000_000;
+              };
+              archiveControllers = ??[_owner]; //??[put cycle ops prinicpal here];
+              supportedBlocks = [
+                {
+                  block_type = "1xfer"; 
+                  url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+                },
+                {
+                  block_type = "2xfer"; 
+                  url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+                },
+                {
+                  block_type = "2approve"; 
+                  url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+                },
+                {
+                  block_type = "1mint"; 
+                  url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+                },
+                {
+                  block_type = "1burn"; 
+                  url="https://github.com/dfinity/ICRC-1/tree/main/standards/ICRC-3";
+                }
+              ];
+            };
+            icrc4 = ?{
+              max_balances = ?200;
+              max_transfers = ?200;
+              fee = ?#ICRC1;
+            };
+          };
+        };
+        case(#Upgrade(x)) {
+          {
+            icrc1 = null;
+            icrc2 = null;
+            icrc3 = null;
+            icrc4 = null;
+          };
+        };
+      };
 
     let default_icrc1_args : ICRC1.InitArgs = {
-      name = ?"Private Token";
-      symbol = ?"PT";
-      logo = ?"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyCAIAAACRXR/mAAABi0lEQVR4nO3YsaqCUBjA8c9rKAQRIb2CRDRE7uFQ1CtED9ADRLQEIY1tDW0Nzj2Cm4FLQ0NTS4NjzYEkcu7gheLeUr/Ogevw/acDnqM/DiqixBiD/PX134DXEQsTsTARCxOxMBELE7EwEQsTsVCxN02n03dLFEWpVqvtdns+n/u+/7xqu91iAcPh8O/VP9mt+/1+vV5d17UsS9f19Xr9wUlSSt0tx3F+HbrdbsfjcbFYlEqleI5t2+/Owxjb7XbxtPF4nDCNd7eKxWKj0ZjNZq7rqqoKAJPJJAxDEbv0E9ct32w2B4MBAFwuF8/zBJEA+J/EVqsVD87nMzfmES8riqJ4IMsyN+YRL2u/38eDer3OjXnExTocDvGLStd1wzAEkQA+YwVBcDqdlsulaZphGMqyvFqtJEkSyCqkzuh2uwlHy+XyZrPp9XriSABZWC/WFAqVSqVWq/X7/dFopGmaWFMmluM4nU5H+IWTy+kXBLEwEQsTsTDllCUx+gGePWJhIhYmYmEiFqacsr4BPA3+UVUM+ccAAAAASUVORK5CYII=";
+      name = ?"Test Token";
+      symbol = ?"TTT";
+      logo = ?"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMSIgaGVpZ2h0PSIxIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InJlZCIvPjwvc3ZnPg==";
       decimals = 8;
       fee = ?#Fixed(10000);
       minting_account = ?{
@@ -80,7 +216,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     let default_icrc3_args : ICRC3.InitArgs = {
       maxActiveRecords = 3000;
       settleToRecords = 2000;
-      maxRecordsInArchiveInstance = 100000000;
+      maxRecordsInArchiveInstance = 500_000;
       maxArchivePages = 62500;
       archiveIndexType = #Stable;
       maxRecordsToArchive = 8000;
@@ -111,73 +247,63 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     };
 
     let default_icrc4_args : ICRC4.InitArgs = {
-      max_balances = ?3000;
-      max_transfers = ?3000;
+      max_balances = ?200;
+      max_transfers = ?200;
       fee = ?#ICRC1;
     };
 
-    let icrc1_args : ICRC1.InitArgs = switch(args){
+    let icrc1_args : ICRC1.InitArgs = switch(defaultArgs.icrc1){
       case(null) default_icrc1_args;
-      case(?args){
-        switch(args.icrc1){
-          case(null) default_icrc1_args;
-          case(?val){
-            {
-              val with minting_account = switch(
-                val.minting_account){
-                  case(?val) ?val;
-                  case(null) {?{
-                    owner = _owner;
-                    subaccount = null;
-                  }};
-                };
+      case(?val){
+        {
+          val with minting_account = switch(
+            val.minting_account){
+              case(?val) ?val;
+              case(null) {?{
+                owner = _owner;
+                subaccount = null;
+              }};
             };
-          };
-        };
+        }
+        
+
+        
       };
     };
 
-    let icrc2_args : ICRC2.InitArgs = switch(args){
+    let icrc2_args : ICRC2.InitArgs = switch(defaultArgs.icrc2){
       case(null) default_icrc2_args;
       case(?args){
-        switch(args.icrc2){
-          case(null) default_icrc2_args;
-          case(?val) val;
-        };
+        args
       };
     };
 
 
-    let icrc3_args : ICRC3.InitArgs = switch(args){
+    let icrc3_args : ICRC3.InitArgs = switch(defaultArgs.icrc3){
       case(null) default_icrc3_args;
       case(?args){
-        switch(?args.icrc3){
-          case(null) default_icrc3_args;
-          case(?val) val;
-        };
+        args
       };
     };
 
-    let icrc4_args : ICRC4.InitArgs = switch(args){
+    let icrc4_args : ICRC4.InitArgs = switch(defaultArgs.icrc4){
       case(null) default_icrc4_args;
       case(?args){
-        switch(args.icrc4){
-          case(null) default_icrc4_args;
-          case(?val) val;
-        };
+        args
       };
     };
 
     stable let icrc1_migration_state = ICRC1.init(ICRC1.initialState(), #v0_1_0(#id),?icrc1_args, _owner);
     stable let icrc2_migration_state = ICRC2.init(ICRC2.initialState(), #v0_1_0(#id),?icrc2_args, _owner);
-    stable let icrc3_migration_state = ICRC3.initialState();
     stable let icrc4_migration_state = ICRC4.init(ICRC4.initialState(), #v0_1_0(#id),?icrc4_args, _owner);
+    stable let icrc3_migration_state = ICRC3.initialState();
     stable let cert_store : CertTree.Store = CertTree.newStore();
     let ct = CertTree.Ops(cert_store);
 
+
     stable var owner = _owner;
 
-        stable var icrc3_migration_state_new = icrc3_migration_state;
+    stable var icrc3_migration_state_new = icrc3_migration_state;
 
     let #v0_1_0(#data(icrc1_state_current)) = icrc1_migration_state;
 
@@ -201,8 +327,17 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
         let initclass : ICRC1.ICRC1 = ICRC1.ICRC1(?icrc1_migration_state, Principal.fromActor(this), get_icrc1_environment());
         ignore initclass.register_supported_standards({
           name = "ICRC-3";
-          url = "https://github.com/dfinity/ICRC-1/tree/icrc-3/standards/ICRC-3"
+          url = "https://github.com/dfinity/ICRC/ICRCs/icrc-3/"
         });
+        ignore initclass.register_supported_standards({
+          name = "ICRC-10";
+          url = "https://github.com/dfinity/ICRC/ICRCs/icrc-10/"
+        });
+        ignore icrc1().register_supported_standards({
+          name = "ICRC-106";
+          url = "https://github.com/dfinity/ICRC/blob/main/ICRCs/ICRC-106"
+        });
+
         _icrc1 := ?initclass;
         initclass;
       };
@@ -222,6 +357,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     {
       icrc1 = icrc1();
       get_fee = null;
+
     };
   };
 
@@ -230,6 +366,10 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       case(null){
         let initclass : ICRC2.ICRC2 = ICRC2.ICRC2(?icrc2_migration_state, Principal.fromActor(this), get_icrc2_environment());
         _icrc2 := ?initclass;
+        ignore icrc1().register_supported_standards({
+          name = "ICRC-103";
+          url = "https://github.com/dfinity/ICRC/blob/main/ICRCs/ICRC-103"
+        });
         initclass;
       };
       case(?val) val;
@@ -248,6 +388,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     {
       icrc1 = icrc1();
       get_fee = null;
+     
     };
   };
 
@@ -256,6 +397,10 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       case(null){
         let initclass : ICRC4.ICRC4 = ICRC4.ICRC4(?icrc4_migration_state, Principal.fromActor(this), get_icrc4_environment());
         _icrc4 := ?initclass;
+        ignore icrc1().register_supported_standards({
+          name = "ICRC-4";
+          url = "https://github.com/dfinity/ICRC/blob/main/ICRCs/ICRC-4"
+        });
         initclass;
       };
       case(?val) val;
@@ -264,15 +409,20 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
 
   private func updated_certification(cert: Blob, lastIndex: Nat) : Bool{
 
-    
+    // D.print("updating the certification " # debug_show(CertifiedData.getCertificate(), ct.treeHash()));
     ct.setCertifiedData();
+    // D.print("did the certification " # debug_show(CertifiedData.getCertificate()));
     return true;
   };
 
   private func get_certificate_store() : CertTree.Store {
+    // D.print("returning cert store " # debug_show(cert_store));
     return cert_store;
   };
-  
+
+
+
+
   private func get_icrc3_environment() : ICRC3.Environment{
       {
         updated_certification = ?updated_certification;
@@ -325,8 +475,6 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     icrc3Class.update_supported_blocks(Buffer.toArray(supportedBlocks));
   };
 
-  
-
  
 
   let icrc3 = ICRC3.Init<system>({
@@ -343,7 +491,6 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
   });
 
   
-
 
   /// Functions for the ICRC1 token standard
   public shared query func icrc1_name() : async Text {
@@ -382,13 +529,65 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       icrc1().supported_standards();
   };
 
+  public shared query func icrc10_supported_standards() : async [ICRC1.SupportedStandard] {
+      icrc1().supported_standards();
+  };
+
   public shared ({ caller }) func icrc1_transfer(args : ICRC1.TransferArgs) : async ICRC1.TransferResult {
-      switch(await* icrc1().transfer_tokens(caller, args, false,  ?#Sync(can_transfer))){
+      switch(await* icrc1().transfer_tokens(caller, args, false, null)){
         case(#trappable(val)) val;
         case(#awaited(val)) val;
         case(#err(#trappable(err))) D.trap(err);
         case(#err(#awaited(err))) D.trap(err);
       };
+  };
+
+
+  public query( { caller }) func icrc130_get_allowances(args: ICRC2Service.GetAllowancesArgs) : async ICRC2Service.AllowanceResult {
+      return icrc2().getAllowances(caller, args);
+  };
+
+  stable var upgradeError = "";
+  stable var upgradeComplete = false;
+
+  public query ({caller}) func getUpgradeError() : async Text {
+    if(caller != _owner){ D.trap("Unauthorized")};
+    return upgradeError;
+  };
+
+  public shared ({ caller }) func upgradeArchive(bOverride : Bool) : async () {
+    if(caller != _owner){ D.trap("Unauthorized")};
+    if(bOverride == true or upgradeComplete == false){} else {
+      D.trap("Upgrade already complete");
+    };
+    try{ 
+      let result = await UpgradeArchive.upgradeArchive(Iter.toArray<Principal>(Map.keys(icrc3().get_state().archives)));
+      upgradeComplete := true;
+    } catch(e){
+      upgradeError := Error.message(e);
+    };
+
+    
+  };
+
+  stable var icrc106IndexCanister : ?Principal = null;
+
+  public type Icrc106Error = {
+    #GenericError : { description : Text; error_code : Nat };
+    #IndexPrincipalNotSet;
+  };
+
+  public query func icrc106_get_index_principal() : async { #Ok : Principal; #Err : Icrc106Error } {
+    switch(icrc106IndexCanister) {
+      case (?val) { #Ok(val) };
+      case (null) { #Err(#IndexPrincipalNotSet) };
+    };
+  };
+
+  public shared({caller}) func set_icrc106_index_principal(principal : ?Principal) : async () {
+    if(caller != owner){ D.trap("Unauthorized")};
+
+    icrc106IndexCanister := principal;
   };
 
   public shared ({ caller }) func mint(args : ICRC1.Mint) : async ICRC1.TransferResult {
@@ -416,7 +615,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     };
 
   public shared ({ caller }) func icrc2_approve(args : ICRC2.ApproveArgs) : async ICRC2.ApproveResponse {
-      switch(await*  icrc2().approve_transfers(caller, args, false, ?#Sync(can_approve))){
+      switch(await*  icrc2().approve_transfers(caller, args, false, null)){
         case(#trappable(val)) val;
         case(#awaited(val)) val;
         case(#err(#trappable(err))) D.trap(err);
@@ -425,7 +624,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
   };
 
   public shared ({ caller }) func icrc2_transfer_from(args : ICRC2.TransferFromArgs) : async ICRC2.TransferFromResponse {
-      switch(await* icrc2().transfer_tokens_from(caller, args, ?#Sync(can_transfer_from))){
+      switch(await* icrc2().transfer_tokens_from(caller, args, null)){
         case(#trappable(val)) val;
         case(#awaited(val)) val;
         case(#err(#trappable(err))) D.trap(err);
@@ -433,8 +632,43 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       };
   };
 
+  public query({caller}) func icrc103_get_allowances(args: ICRC2.GetAllowancesArgs) : async ICRC2Service.AllowanceResult {
+    return icrc2().getAllowances(caller, args);
+  };
+
+  public query func icrc3_get_blocks(args: ICRC3.GetBlocksArgs) : async ICRC3.GetBlocksResult{
+    return icrc3().get_blocks(args);
+  };
+
+  public query func get_transactions(args: { start : Nat; length : Nat }) : async ICRC3Legacy.GetTransactionsResponse {
+
+    let results = icrc3().get_blocks_legacy(args);
+    return {
+      first_index = icrc3().get_state().firstIndex;
+      log_length = icrc3().get_state().lastIndex + 1;
+      transactions = results.transactions;
+      archived_transactions = results.archived_transactions;
+    };
+  };
+
+  public query func icrc3_get_archives(args: ICRC3.GetArchivesArgs) : async ICRC3.GetArchivesResult{
+    return icrc3().get_archives(args);
+  };
+
+  public query func icrc3_get_tip_certificate() : async ?ICRC3.DataCertificate {
+    return icrc3().get_tip_certificate();
+  };
+
+  public query func icrc3_supported_block_types() : async [ICRC3.BlockType] {
+    return icrc3().supported_block_types();
+  };
+
+  public query func get_tip() : async ICRC3.Tip {
+    return icrc3().get_tip();
+  };
+
   public shared ({ caller }) func icrc4_transfer_batch(args: ICRC4.TransferBatchArgs) : async ICRC4.TransferBatchResults {
-      switch(await* icrc4().transfer_batch_tokens(caller, args, ?#Sync(can_transfer), ?#Sync(can_transfer_batch))){
+      switch(await* icrc4().transfer_batch_tokens(caller, args, null, null)){
         case(#trappable(val)) val;
         case(#awaited(val)) val;
         case(#err(#trappable(err))) err;
@@ -446,20 +680,12 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       icrc4().balance_of_batch(request);
   };
 
-  public query func icrc3_get_blocks(args: ICRC3.GetBlocksArgs) : async ICRC3.GetBlocksResult{
-    return icrc3().get_blocks(args);
+  public shared query func icrc4_maximum_update_batch_size() : async ?Nat {
+      ?icrc4().get_state().ledger_info.max_transfers;
   };
 
-  public query func icrc3_get_archives(args: ICRC3.GetArchivesArgs) : async ICRC3.GetArchivesResult{
-    return icrc3().get_archives(args);
-  };
-
-  public query func icrc3_get_tip_certificate() : async ?ICRC3.DataCertificate {
-    return icrc3().get_tip_certificate();
-  };
-
-  public query func get_tip() : async ICRC3.Tip {
-    return icrc3().get_tip();
+  public shared query func icrc4_maximum_query_batch_size() : async ?Nat {
+      ?icrc4().get_state().ledger_info.max_balances;
   };
 
   public shared ({ caller }) func admin_update_owner(new_owner : Principal) : async Bool {
@@ -483,6 +709,21 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     return icrc4().update_ledger_info(requests);
   };
 
+  /* /// Uncomment this code to establish have icrc1 notify you when a transaction has occured.
+  private func transfer_listener(trx: ICRC1.Transaction, trxid: Nat) : () {
+
+  };
+
+  /// Uncomment this code to establish have icrc1 notify you when a transaction has occured.
+  private func approval_listener(trx: ICRC2.TokenApprovalNotification, trxid: Nat) : () {
+
+  };
+
+  /// Uncomment this code to establish have icrc1 notify you when a transaction has occured.
+  private func transfer_from_listener(trx: ICRC2.TransferFromNotification, trxid: Nat) : () {
+
+  }; */
+
   private stable var _init = false;
   public shared(msg) func admin_init() : async () {
     //can only be called once
@@ -492,88 +733,27 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       //ensure metadata has been registered
       let test1 = icrc1().metadata();
       let test2 = icrc2().metadata();
+      let test4 = icrc4().metadata();
       let test3 = icrc3().stats();
 
       //uncomment the following line to register the transfer_listener
-      //icrc1().register_token_transferred_listener("my_namespace", transfer_listener);
+      //icrc1().register_token_transferred_listener<system>("my_namespace", transfer_listener);
 
       //uncomment the following line to register the transfer_listener
-      //icrc2().register_token_approved_listener("my_namespace", approval_listener);
+      //icrc2().register_token_approved_listener<system>("my_namespace", approval_listener);
 
       //uncomment the following line to register the transfer_listener
-      //icrc1().register_transfer_from_listener("my_namespace", transfer_from_listener);
+      //icrc2().register_transfer_from_listener<system>("my_namespace", transfer_from_listener);
     };
     _init := true;
   };
+
 
   // Deposit cycles into this canister.
   public shared func deposit_cycles() : async () {
       let amount = ExperimentalCycles.available();
       let accepted = ExperimentalCycles.accept<system>(amount);
       assert (accepted == amount);
-  };
-
-  //////////////////////
-  ///
-  /// Custom code for implementing a token where those sending tokens must be on an allow list
-  ///
-  //////////////////////
-
-  //create a allowlist of users that can transfer tokens
-  let Set = ICRC1.Set;
-  stable let allowlist = ICRC1.Set.new<Principal>();
-  Set.add(allowlist, Set.phash, _owner);
-
-
-  private func update_fee(item : ?ICRC1.Value, value : Nat) : ?ICRC1.Value {
-    let result =  switch(ICRC1.UtilsHelper.insert_map(item, "fee", #Nat(value))){
-      case(#ok(val)) ?val;
-      case(#err(err)) D.trap("unreachable map addition");
-    };
-  };
-
-
-  private func can_transfer<system>(trx: ICRC1.Value, trxtop: ?ICRC1.Value, notification: ICRC1.TransactionRequestNotification) : Result.Result<(trx: ICRC1.Value, trxtop: ?ICRC1.Value, notification: ICRC1.TransactionRequestNotification), Text>{
-    if(Set.has<Principal>(allowlist, Set.phash, notification.from.owner)){
-      return #ok(trx, update_fee(trxtop,0), {notification with 
-        calculated_fee = 0;});
-    };
-    return #err("Not allowed");
-  };
-
-  private func can_approve<system>(trx: ICRC2.Value, trxtop: ?ICRC2.Value, notification: ICRC2.TokenApprovalNotification) : Result.Result<(trx: ICRC2.Value, trxtop: ?ICRC2.Value, notification: ICRC2.TokenApprovalNotification), Text>{
-    if(Set.has<Principal>(allowlist, Set.phash, notification.from.owner)){
-      return #ok(trx,update_fee(trxtop,0),{notification with 
-        calculated_fee = 0;});
-    };
-    return #err("Not allowed");
-  };
-
-  private func can_transfer_from<system>(trx: ICRC2.Value, trxtop: ?ICRC2.Value, notification: ICRC2.TransferFromNotification) : Result.Result<(trx: ICRC2.Value, trxtop: ?ICRC2.Value, notification: ICRC2.TransferFromNotification), Text>{
-    if(Set.has<Principal>(allowlist, Set.phash, notification.from.owner)){
-      return #ok(trx,update_fee(trxtop,0),{notification with 
-        calculated_fee = 0;});
-    };
-    return #err("Not allowed");
-  };
-
-  private func can_transfer_batch<system>(notification: ICRC4.TransferBatchNotification) : Result.Result<(notification: ICRC4.TransferBatchNotification), ICRC4.TransferBatchResults>{
-    if(Set.has<Principal>(allowlist, Set.phash, notification.from)){
-      return #ok(notification);
-    };
-    return #err([?#Err(#GenericBatchError({message = "Not allowed"; error_code = 1}))]);
-  };
-
-  public shared ({ caller }) func admin_update_allowlist(request : [{principal: Principal; allow: Bool}]) : async () {
-    if(caller != owner){ D.trap("Unauthorized")};
-    
-    for(thisItem in request.vals()){
-      if(thisItem.allow){
-        Set.add(allowlist, Set.phash, thisItem.principal);
-      } else {
-        Set.delete(allowlist, Set.phash, thisItem.principal);
-      }
-    };
   };
 
   system func postupgrade() {
@@ -585,7 +765,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       //icrc2().register_token_approved_listener("my_namespace", approval_listener);
 
       //uncomment the following line to register the transfer_listener
-      //icrc1().register_transfer_from_listener("my_namespace", transfer_from_listener);
+      //icrc2().register_transfer_from_listener("my_namespace", transfer_from_listener);
   };
 
 };

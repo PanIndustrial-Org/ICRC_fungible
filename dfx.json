@@ -22,6 +22,12 @@
           "type": "motoko",
           "main": "src/examples/Lotto.mo",
           "args": "-v --incremental-gc"
+        },
+         "sns": {
+          "type": "motoko",
+          "main": "src/snstest.mo",
+          "args": "-v --incremental-gc",
+          "gzip": true
         }
     },
     "defaults": {

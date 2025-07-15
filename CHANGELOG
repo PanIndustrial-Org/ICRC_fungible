@@ -1,0 +1,7 @@
+CHANGELOG
+
+v0.0.6
+
+- implemented ICRC3 to include legacy get_transactions backfill
+- added icrc-103 endpoint for retrieving allowances.
+- added icrc-106 endpoint for retrieving index canister
