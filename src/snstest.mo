@@ -4,6 +4,7 @@ import ExperimentalCycles "mo:base/ExperimentalCycles";
 
 import Principal "mo:base/Principal";
 import Time "mo:base/Time";
+import Timer "mo:base/Timer";
 
 import CertifiedData "mo:base/CertifiedData";
 import CertTree "mo:ic-certification/CertTree";
@@ -293,6 +294,8 @@ shared ({ caller = _owner }) actor class Token  (args: SNSTypes.SNSLedgerArgumen
       };
     };
 
+    D.print("passed in " # debug_show(icrc1_args));
+
     stable let icrc1_migration_state = ICRC1.init(ICRC1.initialState(), #v0_1_0(#id),?icrc1_args, _owner);
     stable let icrc2_migration_state = ICRC2.init(ICRC2.initialState(), #v0_1_0(#id),?icrc2_args, _owner);
     stable let icrc4_migration_state = ICRC4.init(ICRC4.initialState(), #v0_1_0(#id),?icrc4_args, _owner);
@@ -321,22 +324,13 @@ shared ({ caller = _owner }) actor class Token  (args: SNSTypes.SNSLedgerArgumen
     };
   };
 
-    func icrc1() : ICRC1.ICRC1 {
+  func icrc1() : ICRC1.ICRC1 {
     switch(_icrc1){
       case(null){
+
+        D.print("Initializing ICRC1");
         let initclass : ICRC1.ICRC1 = ICRC1.ICRC1(?icrc1_migration_state, Principal.fromActor(this), get_icrc1_environment());
-        ignore initclass.register_supported_standards({
-          name = "ICRC-3";
-          url = "https://github.com/dfinity/ICRC/ICRCs/icrc-3/"
-        });
-        ignore initclass.register_supported_standards({
-          name = "ICRC-10";
-          url = "https://github.com/dfinity/ICRC/ICRCs/icrc-10/"
-        });
-        ignore icrc1().register_supported_standards({
-          name = "ICRC-106";
-          url = "https://github.com/dfinity/ICRC/blob/main/ICRCs/ICRC-106"
-        });
+       
 
         _icrc1 := ?initclass;
         initclass;
@@ -366,10 +360,7 @@ shared ({ caller = _owner }) actor class Token  (args: SNSTypes.SNSLedgerArgumen
       case(null){
         let initclass : ICRC2.ICRC2 = ICRC2.ICRC2(?icrc2_migration_state, Principal.fromActor(this), get_icrc2_environment());
         _icrc2 := ?initclass;
-        ignore icrc1().register_supported_standards({
-          name = "ICRC-103";
-          url = "https://github.com/dfinity/ICRC/blob/main/ICRCs/ICRC-103"
-        });
+        
         initclass;
       };
       case(?val) val;
@@ -397,10 +388,7 @@ shared ({ caller = _owner }) actor class Token  (args: SNSTypes.SNSLedgerArgumen
       case(null){
         let initclass : ICRC4.ICRC4 = ICRC4.ICRC4(?icrc4_migration_state, Principal.fromActor(this), get_icrc4_environment());
         _icrc4 := ?initclass;
-        ignore icrc1().register_supported_standards({
-          name = "ICRC-4";
-          url = "https://github.com/dfinity/ICRC/blob/main/ICRCs/ICRC-4"
-        });
+        
         initclass;
       };
       case(?val) val;
@@ -483,7 +471,7 @@ shared ({ caller = _owner }) actor class Token  (args: SNSTypes.SNSLedgerArgumen
     args = ?icrc3_args;
     pullEnvironment = ?get_icrc3_environment;
     onInitialize = ?(func(newClass: ICRC3.ICRC3) : async*(){
-       ensure_block_types(newClass);
+       
     });
     onStorageChange = func(state: ICRC3.State){
       icrc3_migration_state_new := state;
@@ -645,7 +633,7 @@ shared ({ caller = _owner }) actor class Token  (args: SNSTypes.SNSLedgerArgumen
     let results = icrc3().get_blocks_legacy(args);
     return {
       first_index = icrc3().get_state().firstIndex;
-      log_length = icrc3().get_state().lastIndex + 1;
+      log_length = results.log_length;
       transactions = results.transactions;
       archived_transactions = results.archived_transactions;
     };
@@ -728,13 +716,40 @@ shared ({ caller = _owner }) actor class Token  (args: SNSTypes.SNSLedgerArgumen
   public shared(msg) func admin_init() : async () {
     //can only be called once
 
-
+    D.print("in init admin");
     if(_init == false){
       //ensure metadata has been registered
       let test1 = icrc1().metadata();
       let test2 = icrc2().metadata();
       let test4 = icrc4().metadata();
       let test3 = icrc3().stats();
+
+       ignore icrc1().register_supported_standards({
+          name = "ICRC-3";
+          url = "https://github.com/dfinity/ICRC/ICRCs/icrc-3/"
+        });
+        ignore icrc1().register_supported_standards({
+          name = "ICRC-10";
+          url = "https://github.com/dfinity/ICRC/ICRCs/icrc-10/"
+        });
+        ignore icrc1().register_supported_standards({
+          name = "ICRC-106";
+          url = "https://github.com/dfinity/ICRC/blob/main/ICRCs/ICRC-106"
+        });
+
+      ignore icrc1().register_supported_standards({
+          name = "ICRC-103";
+          url = "https://github.com/dfinity/ICRC/blob/main/ICRCs/ICRC-103"
+        });
+
+      ignore icrc1().register_supported_standards({
+          name = "ICRC-4";
+          url = "https://github.com/dfinity/ICRC/blob/main/ICRCs/ICRC-4"
+        });
+
+        ensure_block_types(icrc3());
+
+      D.print("made it pst icrc3 ensure blocktypes");
 
       //uncomment the following line to register the transfer_listener
       //icrc1().register_token_transferred_listener<system>("my_namespace", transfer_listener);
@@ -747,6 +762,17 @@ shared ({ caller = _owner }) actor class Token  (args: SNSTypes.SNSLedgerArgumen
     };
     _init := true;
   };
+
+  private func init_local() : async () {
+    D.print("runnning local init");
+    let thisActor : actor{
+      admin_init: () -> async();
+    } = actor(Principal.toText(Principal.fromActor(this)));
+
+    await thisActor.admin_init();
+  };
+
+  ignore Timer.setTimer<system>(#seconds(0), init_local);
 
 
   // Deposit cycles into this canister.
