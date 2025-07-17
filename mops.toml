@@ -2,7 +2,7 @@
 base = "0.11.0"
 icrc1-mo = "0.0.16"
 icrc2-mo = "0.0.16"
-icrc3-mo = "0.3.3"
+icrc3-mo = "0.3.5"
 icrc4-mo = "0.0.16"
 ic-certification = "0.1.3"
 class-plus = "0.0.1"

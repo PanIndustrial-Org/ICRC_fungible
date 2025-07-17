@@ -632,7 +632,7 @@ shared ({ caller = _owner }) actor class Token  (args: SNSTypes.SNSLedgerArgumen
 
     let results = icrc3().get_blocks_legacy(args);
     return {
-      first_index = icrc3().get_state().firstIndex;
+      first_index = results.first_index;
       log_length = results.log_length;
       transactions = results.transactions;
       archived_transactions = results.archived_transactions;

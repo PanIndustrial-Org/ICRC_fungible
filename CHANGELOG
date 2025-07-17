@@ -5,3 +5,4 @@ v0.0.6
 - implemented ICRC3 to include legacy get_transactions backfill
 - added icrc-103 endpoint for retrieving allowances.
 - added icrc-106 endpoint for retrieving index canister
+- added sns token to match interface an intitialization as close to rust sns ledger as possible. Use this with Defi vectors test see https://github.com/Neutrinomic/devefi_icrc_ledger
