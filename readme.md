@@ -31,6 +31,9 @@ This project is focused on the development and implementation of a fungible toke
 - **Testing**: Thoroughly test any new features or changes in a controlled environment before integrating them into the main project.
 - **Documentation**: Update documentation and comments within the code to reflect changes or additions to the project.
 
+## Migration
+- **ICRC-3**: Version v0.0.6 updates ICRC3 with the class plus syntax and initialization.  If you have previouly deployed ICRC-3 you'll need to update your syntax to match the new pattern. You should be able to use your existing icrc3_migration_state variable and it should not require any kind of migration as the data structure is the same.  To upgrade your archive canisters to include the legacy get_transaction functions you will need to implement and run the upgrade helper in the ICRC3 directory(see the icrc3-mo directory in your .mops folder after running mops install).
+
 ## Repository
 - [Project Repository](https://github.com/PanIndustrial-Org/ICRC_fungible)
 
