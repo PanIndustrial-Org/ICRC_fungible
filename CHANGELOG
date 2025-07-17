@@ -1,5 +1,8 @@
 CHANGELOG
 
+v0.0.7
+- update dependencies, compiler, dfx
+
 v0.0.6
 
 - implemented ICRC3 to include legacy get_transactions backfill

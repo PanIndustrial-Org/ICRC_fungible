@@ -1,5 +1,5 @@
 [dependencies]
-base = "0.11.0"
+base = "0.14.14"
 icrc1-mo = "0.0.16"
 icrc2-mo = "0.0.16"
 icrc3-mo = "0.3.5"
@@ -14,7 +14,7 @@ matchers = "https://github.com/kritzcreek/motoko-matchers#v1.3.0@3dac8a071b69e4e
 
 [package]
 name = "icrc-fungible"
-version = "0.0.6"
+version = "0.0.7"
 description = "ICRC1, ICRC2, ICRC3, ICRC4, and ICRC10 fungible token for motoko"
 repository = "https://github.com/PanIndustrial-Org/ICRC_fungible"
 keywords = [
